@@ -1,0 +1,165 @@
+<!doctype html>
+<html>
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <title>Dice Table</title>
+  <style type="text/css" media="screen">
+    /* <![CDATA[ */
+    #chat {
+      max-height: 12em;
+      overflow: auto;
+      padding: 0;
+    }
+    #chat li {
+      list-style-type: none;
+    }
+    #chat li span:first-child {
+      font-weight: bold;
+      margin-right: 0.5em;
+    }
+    #chat li.error {
+      color: #c00;
+    }
+    #chat li.roll {
+      font-style: italic;
+    }
+    /* ]]> */
+  </style>
+</head>
+<body>
+  <form id="msg-form" action="" method="POST">
+    <input type="text" id="msg-nick" placeholder="Nick" size="10" />
+    <input type="text" id="msg-text" placeholder="Message" size="30" />
+    <input type="submit" value="Send"/>
+  </form>
+
+  <form id="roll-form" action="" method="POST">
+    <input type="text" id="roll-count" value="2" size="2" />
+    <select id="roll-type">
+      <option value="4">d4</option>
+      <option value="6" selected="selected">d6</option>
+      <option value="10">d10</option>
+      <option value="12">d12</option>
+      <option value="20">d20</option>
+    </select>
+    <input type="submit" value="Roll"/>
+  </form>
+
+  <ul id="chat"></ul>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="text/javascript" charset="utf-8">
+    /* <![CDATA[ */
+    // Polyfills
+    if (!String.prototype.trim) {
+      String.prototype.trim=function(){return this.replace(/^\s+|\s+$/g, '');};
+    }
+
+    function DiceTable(socket) {
+      this.socket = socket;
+      this.ui = {
+        chat: document.getElementById('chat'),
+        msg: {
+          form: document.getElementById('msg-form'),
+          nick: document.getElementById('msg-nick'),
+          text: document.getElementById('msg-text'),
+        },
+        roll: {
+          form: document.getElementById('roll-form'),
+          count: document.getElementById('roll-count'),
+          type: document.getElementById('roll-type'),
+        }
+      };
+
+      this.setup();
+      this.connect();
+    }
+
+    DiceTable.prototype.setup = function() {
+      var self = this;
+
+      this.ui.msg.form.addEventListener('submit', function(ev) {
+        if (self.hasNick()) {
+          self.socket.emit('message', {
+            room: window.location.pathname,
+            author: self.ui.msg.nick.value,
+            text: self.ui.msg.text.value
+          })
+
+          self.ui.msg.text.value = "";
+          self.ui.msg.text.focus();
+        } else {
+          self.addMessage({ author: '[system]', text: 'You need to pick a nick' }, 'error');
+        }
+
+        ev.preventDefault();
+      });
+
+      this.ui.roll.form.addEventListener('submit', function(ev) {
+        if (self.hasNick()) {
+          self.socket.emit('roll', {
+            room: window.location.pathname,
+            author: self.ui.msg.nick.value,
+            count: self.ui.roll.count.value,
+            type: self.ui.roll.type.value,
+          })
+        } else {
+          self.addMessage({ author: '[system]', text: 'You need to pick a nick' }, 'error');
+        }
+
+        ev.preventDefault();
+      });
+    }
+
+    DiceTable.prototype.connect = function() {
+      var self = this;
+
+      this.socket.emit('subscribe', {room: window.location.pathname})
+
+      this.socket.on('message', function(data) {
+        self.addMessage(data.message);
+      });
+
+      this.socket.on('roll', function(data) {
+        self.addRoll(data.roll);
+      });
+    }
+
+    DiceTable.prototype.addMessage = function(message, type) {
+      if (type === undefined) type = 'normal';
+
+      var nick = document.createElement('span'),
+          line = document.createElement('li');
+
+      nick.textContent = message.author;
+      line.appendChild(nick);
+      line.appendChild(document.createTextNode(message.text));
+      line.classList.add(type);
+
+      this.ui.chat.appendChild(line);
+      this.ui.chat.scrollTop = this.ui.chat.scrollHeight;
+    }
+
+    DiceTable.prototype.addRoll = function(roll) {
+      var text = [
+        'rolled',
+        [roll.count, roll.type].join('d') + '.',
+        'Total is:',
+        roll.total,
+        '['+ roll.results.join(', ') + ']'
+      ].join(' ');
+
+      this.addMessage({author: roll.author, text: text}, 'roll');
+    }
+
+    DiceTable.prototype.hasNick = function() {
+      return this.ui.msg.nick.value.trim() !== "";
+    }
+
+    var socket = io.connect('http://localhost:3000'),
+        table  = new DiceTable(socket);
+    /* ]]> */
+  </script>
+</body>
+</html>
+
